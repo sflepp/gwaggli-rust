@@ -1,8 +1,8 @@
+use crate::transcription::Transcribe;
 use std::fs::File;
 use std::io::Read;
 use transcription::whisper;
 use whisper::{WhisperConfig, WhisperModel, WhisperTranscriber};
-use crate::transcription::Transcribe;
 
 mod audio;
 mod transcription;
@@ -15,7 +15,8 @@ fn main() {
     let mut file = File::open(file_path).expect("File not found");
 
     let mut audio_data = Vec::new();
-    file.read_to_end(&mut audio_data).expect("Unable to read file");
+    file.read_to_end(&mut audio_data)
+        .expect("Unable to read file");
 
     let riff_wave = audio::riff_wave::RiffWave::new(audio_data);
 
@@ -23,10 +24,10 @@ fn main() {
         config: WhisperConfig {
             model: WhisperModel::Tiny,
             model_dir: "./test_data/models/whisper".to_string(),
-        }
+        },
     };
 
     let result = testee.transcribe(&riff_wave);
 
-    println!("Elapsed: {:.2?} Result: {}",  now.elapsed(), result);
+    println!("Elapsed: {:.2?} Result: {}", now.elapsed(), result);
 }

@@ -121,17 +121,18 @@ impl RiffWave {
         let mut result = Vec::new();
 
         match self.header.audio_format {
-            AudioFormat::PCM => {
-                match self.header.bits_per_sample {
-                    16 => {
-                        for i in 0..self.data.len() / 2 {
-                            let sample = as_i16_le(&self.data[i * 2..i * 2 + 2].try_into().unwrap());
-                            result.push(sample as f32 / 32768.0);
-                        }
+            AudioFormat::PCM => match self.header.bits_per_sample {
+                16 => {
+                    for i in 0..self.data.len() / 2 {
+                        let sample = as_i16_le(&self.data[i * 2..i * 2 + 2].try_into().unwrap());
+                        result.push(sample as f32 / 32768.0);
                     }
-                    _ => panic!("Unsupported bits per sample: {}", self.header.bits_per_sample),
                 }
-            }
+                _ => panic!(
+                    "Unsupported bits per sample: {}",
+                    self.header.bits_per_sample
+                ),
+            },
             _ => panic!("Unsupported audio format: {}", self.header.audio_format),
         }
 
@@ -140,28 +141,25 @@ impl RiffWave {
 }
 
 fn as_u32_le(array: &[u8; 4]) -> u32 {
-    ((array[0] as u32) << 0) +
-        ((array[1] as u32) << 8) +
-        ((array[2] as u32) << 16) +
-        ((array[3] as u32) << 24)
+    ((array[0] as u32) << 0)
+        + ((array[1] as u32) << 8)
+        + ((array[2] as u32) << 16)
+        + ((array[3] as u32) << 24)
 }
 
 fn as_u16_le(array: &[u8; 2]) -> u16 {
-    ((array[0] as u16) << 0) +
-        ((array[1] as u16) << 8)
+    ((array[0] as u16) << 0) + ((array[1] as u16) << 8)
 }
 
 fn as_i16_le(array: &[u8; 2]) -> i16 {
-    ((array[0] as i16) << 0) +
-        ((array[1] as i16) << 8)
+    ((array[0] as i16) << 0) + ((array[1] as i16) << 8)
 }
-
 
 #[cfg(test)]
 mod tests {
+    use crate::audio::riff_wave::{AudioFormat, Channels, RiffWave};
     use std::fs::File;
     use std::io::Read;
-    use crate::audio::riff_wave::{AudioFormat, Channels, RiffWave};
 
     #[test]
     fn test_empty_wave_riff_header() {
@@ -194,7 +192,8 @@ mod tests {
         let mut file = File::open(file_path).expect("File not found");
 
         let mut audio_data = Vec::new();
-        file.read_to_end(&mut audio_data).expect("Unable to read file");
+        file.read_to_end(&mut audio_data)
+            .expect("Unable to read file");
 
         let testee = RiffWave::new(audio_data);
 

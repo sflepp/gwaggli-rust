@@ -5,15 +5,18 @@ pub struct FakeTranscriber {}
 
 impl Transcribe for FakeTranscriber {
     fn transcribe(&self, data: &RiffWave) -> String {
-        format!("No real transcription, but returning some data. Length={}", data.data.len())
+        format!(
+            "No real transcription, but returning some data. Length={}",
+            data.data.len()
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::transcription::Transcribe;
     use std::fs::File;
     use std::io::Read;
-    use crate::transcription::Transcribe;
 
     #[test]
     fn test_transcribe() {
@@ -22,7 +25,8 @@ mod tests {
         let mut file = File::open(file_path).expect("File not found");
 
         let mut audio_data = Vec::new();
-        file.read_to_end(&mut audio_data).expect("Unable to read file");
+        file.read_to_end(&mut audio_data)
+            .expect("Unable to read file");
 
         let riff_wave = crate::audio::riff_wave::RiffWave::new(audio_data);
 
@@ -30,7 +34,9 @@ mod tests {
 
         let result = testee.transcribe(&riff_wave);
 
-
-        assert_eq!(result, "No real transcription, but returning some data. Length=674066".to_string());
+        assert_eq!(
+            result,
+            "No real transcription, but returning some data. Length=674066".to_string()
+        );
     }
 }
