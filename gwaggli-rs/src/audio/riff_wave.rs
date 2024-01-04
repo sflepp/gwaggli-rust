@@ -1,20 +1,8 @@
 use std::fmt::Display;
+use std::str::from_utf8;
 
 // https://tech.ebu.ch/docs/tech/tech3285.pdf
-pub struct RiffWaveHeader {
-    // The letters “RIFF” in ASCII form (0x52494646 big-endian form).
-    chunk_id: [u8; 4],
-    // RIFF
-    // The size of the rest of the chunk following this number. This is the size of the
-    // entire file in bytes minus 8 bytes for the two fields not included in this count:
-    // chunk_id and chunk_size.
-    chunk_size: u32,
-    // The letters “WAVE” in ASCII form (0x57415645 big-endian form).
-    format: [u8; 4],
-    // The letters “fmt ” in ASCII form (0x666d7420 big-endian form).
-    subchunk1_id: [u8; 4],
-    // The size of the rest of the <fmt> subchunk following this number.
-    pub subchunk1_size: u32,
+pub struct RiffWaveFormat {
     // The audio format. This is PCM = 1 (i.e. Linear quantization). Values other
     // than 1 indicate some form of compression.
     pub audio_format: AudioFormat,
@@ -35,54 +23,43 @@ pub struct RiffWaveHeader {
     // The number of bits used to represent each sample of a single channel of audio.
     // I.e. 8 bits for 8-bit mono, 16 bits for 16-bit stereo etc.
     pub bits_per_sample: u16,
-    // The letters “data” in ASCII form (0x64617461 big-endian form).
-    subchunk2_id: [u8; 4],
-    // The size of the data subchunk following this number.
-    subchunk2_size: u32,
 }
 
-impl RiffWaveHeader {
-    pub fn new(data: &[u8; 44]) -> Self {
-        Self::from_bytes(data)
-    }
-
-    pub fn from_bytes(data: &[u8; 44]) -> Self {
-        RiffWaveHeader {
-            chunk_id: data[0..4].try_into().unwrap(),
-            chunk_size: as_u32_le(data[4..8].try_into().unwrap()),
-            format: data[8..12].try_into().unwrap(),
-            subchunk1_id: data[12..16].try_into().unwrap(),
-            subchunk1_size: as_u32_le(data[16..20].try_into().unwrap()),
-            audio_format: match as_u16_le(data[20..22].try_into().unwrap()) {
+impl RiffWaveFormat {
+    fn new(bytes: Vec<u8>) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(RiffWaveFormat {
+            audio_format: match as_u16_le(bytes[0..2].try_into().unwrap()) {
                 1 => AudioFormat::PCM,
-                _ => panic!("Unsupported audio format"),
+                _ => panic!(
+                    "Unsupported audio format: {}",
+                    as_u16_le(bytes[0..2].try_into().unwrap())
+                ),
             },
-            num_channels: match as_u16_le(data[22..24].try_into().unwrap()) {
+            num_channels: match as_u16_le(bytes[2..4].try_into().unwrap()) {
                 1 => Channels::Mono,
                 2 => Channels::Stereo,
-                _ => panic!("Unsupported number of channels"),
+                _ => panic!(
+                    "Unsupported number of channels: {}",
+                    as_u16_le(bytes[2..4].try_into().unwrap())
+                ),
             },
-            sample_rate: as_u32_le(data[24..28].try_into().unwrap()),
-            byte_rate: as_u32_le(data[28..32].try_into().unwrap()),
-            block_align: as_u16_le(data[32..34].try_into().unwrap()),
-            bits_per_sample: as_u16_le(data[34..36].try_into().unwrap()),
-            subchunk2_id: data[36..40].try_into().unwrap(),
-            subchunk2_size: as_u32_le(data[40..44].try_into().unwrap()),
-        }
+            sample_rate: as_u32_le(bytes[4..8].try_into().unwrap()),
+            byte_rate: as_u32_le(bytes[8..12].try_into().unwrap()),
+            block_align: as_u16_le(bytes[12..14].try_into().unwrap()),
+            bits_per_sample: as_u16_le(bytes[14..16].try_into().unwrap()),
+        })
     }
 }
 
 #[derive(PartialEq, Debug)]
 pub enum AudioFormat {
     PCM = 1,
-    IEEEFloat = 3,
 }
 
 impl Display for AudioFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AudioFormat::PCM => write!(f, "PCM"),
-            AudioFormat::IEEEFloat => write!(f, "IEEEFloat"),
         }
     }
 }
@@ -103,40 +80,78 @@ impl Display for Channels {
 }
 
 pub struct RiffWave {
-    pub header: RiffWaveHeader,
+    pub size: u32,
+    pub format: RiffWaveFormat,
     pub data: Vec<u8>,
 }
 
 impl RiffWave {
-    pub fn new(data: Vec<u8>) -> Self {
-        let header = RiffWaveHeader::new(data[0..44].try_into().unwrap());
-        let data_offset = header.subchunk1_size as usize + 28;
-        RiffWave {
-            header,
-            data: data[data_offset..].to_vec(),
+    pub fn new(bytes: Vec<u8>) -> Result<Self, Box<dyn std::error::Error>> {
+        let chunk_id: [u8; 4] = bytes[0..4].try_into().unwrap();
+
+        match from_utf8(&chunk_id) {
+            Ok("RIFF") => (),
+            Ok(other) => return Err(format!("Unsupported chunk id: {}", other).into()),
+            Err(e) => return Err(format!("Error parsing chunk id: {}", e).into()),
         }
+
+        let chunk_size: u32 = as_u32_le(bytes[4..8].try_into().unwrap());
+        let format: [u8; 4] = bytes[8..12].try_into().unwrap();
+
+        match from_utf8(&format) {
+            Ok("WAVE") => (),
+            Ok(other) => return Err(format!("Unsupported format: {}", other).into()),
+            Err(e) => return Err(format!("Error parsing format: {}", e).into()),
+        }
+
+        let mut offset = 12;
+
+        let mut fmt: Option<RiffWaveFormat> = None;
+        let mut data: Option<Vec<u8>> = None;
+
+        loop {
+            let sub_chunk_id: [u8; 4] = bytes[offset..offset + 4].try_into().unwrap();
+            let sub_chunk_size: u32 = as_u32_le(bytes[offset + 4..offset + 8].try_into().unwrap());
+
+            match from_utf8(&sub_chunk_id) {
+                Ok("fmt ") => {
+                    fmt = Some(RiffWaveFormat::new(
+                        bytes[offset + 8..offset + 8 + sub_chunk_size as usize].to_vec(),
+                    )?);
+                }
+                Ok("data") => {
+                    data = Some(bytes[offset + 8..offset + 8 + sub_chunk_size as usize].to_vec());
+                }
+                Ok(_) => {
+                    // skipping unknown chunk
+                }
+                Err(e) => return Err(format!("Error parsing sub chunk id: {}", e).into()),
+            }
+
+            offset += 8 + sub_chunk_size as usize;
+
+            if offset >= bytes.len() {
+                break;
+            }
+        }
+
+        Ok(RiffWave {
+            size: chunk_size,
+            format: fmt.expect("Missing format"),
+            data: data.expect("Missing data"),
+        })
     }
 
     pub fn data_as_f32(&self) -> Vec<f32> {
-        let mut result = Vec::new();
-
-        match self.header.audio_format {
-            AudioFormat::PCM => match self.header.bits_per_sample {
-                16 => {
-                    for i in 0..self.data.len() / 2 {
-                        let sample = as_i16_le(&self.data[i * 2..i * 2 + 2].try_into().unwrap());
-                        result.push(sample as f32 / 32768.0);
-                    }
-                }
+        match self.format.audio_format {
+            AudioFormat::PCM => match self.format.bits_per_sample {
+                16 => return from_i16_vec_to_f32_vec(&self.data),
                 _ => panic!(
                     "Unsupported bits per sample: {}",
-                    self.header.bits_per_sample
+                    self.format.bits_per_sample
                 ),
             },
-            _ => panic!("Unsupported audio format: {}", self.header.audio_format),
         }
-
-        result
     }
 }
 
@@ -151,8 +166,17 @@ fn as_u16_le(array: &[u8; 2]) -> u16 {
     ((array[0] as u16) << 0) + ((array[1] as u16) << 8)
 }
 
-fn as_i16_le(array: &[u8; 2]) -> i16 {
-    ((array[0] as i16) << 0) + ((array[1] as i16) << 8)
+fn from_i16_vec_to_f32_vec(array: &[u8]) -> Vec<f32> {
+    let mut result = Vec::with_capacity(array.len() / 2);
+
+    for chunk in array.chunks_exact(2) {
+        if let [low, high] = *chunk {
+            let sample = i16::from_le_bytes([low, high]);
+            result.push(sample as f32 * (1.0 / 32768.0));
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -167,49 +191,63 @@ mod tests {
     fmt \x10\x00\x00\x00\x01\x00\x01\x00\x80\x3e\x00\x00\x00\x7d\x00\x00\x02\x00\x10\x00\
     data\x00\x00\x00\x00";
 
-        let riff_wave = RiffWave::new(data.to_vec());
+        let riff_wave = RiffWave::new(data.to_vec()).unwrap();
 
-        assert_eq!(riff_wave.header.chunk_id, *b"RIFF");
-        assert_eq!(riff_wave.header.chunk_size, 36);
-        assert_eq!(riff_wave.header.format, *b"WAVE");
-        assert_eq!(riff_wave.header.subchunk1_id, *b"fmt ");
-        assert_eq!(riff_wave.header.subchunk1_size, 16);
-        assert_eq!(riff_wave.header.audio_format, AudioFormat::PCM);
-        assert_eq!(riff_wave.header.num_channels, Channels::Mono);
-        assert_eq!(riff_wave.header.sample_rate, 16000);
-        assert_eq!(riff_wave.header.byte_rate, 32000);
-        assert_eq!(riff_wave.header.block_align, 2);
-        assert_eq!(riff_wave.header.bits_per_sample, 16);
-        assert_eq!(riff_wave.header.subchunk2_id, *b"data");
-        assert_eq!(riff_wave.header.subchunk2_size, 0);
+        assert_eq!(riff_wave.format.audio_format, AudioFormat::PCM);
+        assert_eq!(riff_wave.format.num_channels, Channels::Mono);
+        assert_eq!(riff_wave.format.sample_rate, 16000);
+        assert_eq!(riff_wave.format.byte_rate, 32000);
+        assert_eq!(riff_wave.format.block_align, 2);
+        assert_eq!(riff_wave.format.bits_per_sample, 16);
         assert_eq!(riff_wave.data.len(), 0);
     }
 
     #[test]
-    fn test_real_wave_file() {
-        let file_path = "test_data/audio/riff_wave/OSR_us_000_0031_8k.wav";
+    fn test_pcm_s16le_8k_mono() {
+        let data = read_audio_file("test_data/audio/riff_wave/pcm_s16le_8k_mono.wav");
+        let testee = RiffWave::new(data).unwrap();
 
+        assert_eq!(testee.format.audio_format, AudioFormat::PCM);
+        assert_eq!(testee.format.num_channels, Channels::Mono);
+        assert_eq!(testee.format.sample_rate, 8000);
+        assert_eq!(testee.format.byte_rate, 16000);
+        assert_eq!(testee.format.block_align, 2);
+        assert_eq!(testee.format.bits_per_sample, 16);
+        assert_eq!(testee.data.len(), 674066);
+    }
+
+    #[test]
+    fn test_pcm_s16le_16k_mono() {
+        let data = read_audio_file("test_data/audio/riff_wave/pcm_s16le_16k_mono.wav");
+        let testee = RiffWave::new(data).unwrap();
+
+        assert_eq!(testee.format.audio_format, AudioFormat::PCM);
+        assert_eq!(testee.format.num_channels, Channels::Mono);
+        assert_eq!(testee.format.sample_rate, 16000);
+        assert_eq!(testee.format.byte_rate, 32000);
+        assert_eq!(testee.format.block_align, 2);
+        assert_eq!(testee.format.bits_per_sample, 16);
+        assert_eq!(testee.data.len(), 1348132);
+    }
+
+    fn read_audio_file(file_path: &str) -> Vec<u8> {
         let mut file = File::open(file_path).expect("File not found");
 
         let mut audio_data = Vec::new();
         file.read_to_end(&mut audio_data)
             .expect("Unable to read file");
 
-        let testee = RiffWave::new(audio_data);
+        audio_data
+    }
 
-        assert_eq!(testee.header.chunk_id, *b"RIFF");
-        assert_eq!(testee.header.chunk_size, 674102);
-        assert_eq!(testee.header.format, *b"WAVE");
-        assert_eq!(testee.header.subchunk1_id, *b"fmt ");
-        assert_eq!(testee.header.subchunk1_size, 16);
-        assert_eq!(testee.header.audio_format, AudioFormat::PCM);
-        assert_eq!(testee.header.num_channels, Channels::Mono);
-        assert_eq!(testee.header.sample_rate, 8000);
-        assert_eq!(testee.header.byte_rate, 16000);
-        assert_eq!(testee.header.block_align, 2);
-        assert_eq!(testee.header.bits_per_sample, 16);
-        assert_eq!(testee.header.subchunk2_id, *b"data");
-        assert_eq!(testee.header.subchunk2_size, 674066);
-        assert_eq!(testee.data.len(), 674066);
+    #[test]
+    fn test_from_i16_vec_to_f32_vec() {
+        let data = read_audio_file("test_data/audio/riff_wave/pcm_s16le_16k_mono.wav");
+        let testee = RiffWave::new(data).unwrap();
+        let result = super::from_i16_vec_to_f32_vec(&testee.data);
+
+        assert_eq!(result[0], 0.0012817383);
+        assert_eq!(result[1], 0.0013122559);
+        assert_eq!(result[1000], -6.1035156e-5);
     }
 }

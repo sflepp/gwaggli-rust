@@ -4,21 +4,26 @@ use crate::audio::riff_wave::Channels::Mono;
 use crate::audio::riff_wave::RiffWave;
 use crate::transcription::Transcribe;
 use curl::easy::Easy;
+use std::error::Error;
 use std::fs;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 pub struct WhisperTranscriber {
     pub config: WhisperConfig,
+    context: Option<WhisperContext>,
 }
 
 pub struct WhisperConfig {
     pub model: WhisperModel,
     pub model_dir: String,
+    pub use_gpu: bool,
+    pub n_threads: i32,
 }
 
+#[allow(dead_code)]
 pub enum WhisperModel {
     Tiny,
     Base,
@@ -39,38 +44,35 @@ impl WhisperModel {
     }
     pub fn get_model_url(&self) -> String {
         format!(
-            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}?download=true",
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}",
             self.get_model_name()
         )
     }
-}
 
-impl WhisperTranscriber {
-    pub fn download_model(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let model_dir = PathBuf::from(self.config.model_dir.clone());
-        let model_path = model_dir.join(self.config.model.get_model_name());
+    pub fn download(&self, to_directory: &Path) -> Result<PathBuf, Box<dyn Error>> {
+        let model_path = to_directory.join(self.get_model_name());
 
-        if !fs::metadata(&model_dir).is_ok() {
-            fs::create_dir_all(&model_dir)?;
+        if !fs::metadata(&to_directory).is_ok() {
+            fs::create_dir_all(&to_directory)?;
         }
 
         if fs::metadata(&model_path).is_ok() {
             println!(
                 "Model {} already exists, skipping download.",
-                self.config.model.get_model_name()
+                self.get_model_name()
             );
-            return Ok(());
+            return Ok(model_path);
         }
 
         println!(
             "Downloading model {} from {}",
-            self.config.model.get_model_name(),
-            self.config.model.get_model_url()
+            self.get_model_name(),
+            self.get_model_url()
         );
 
-        let mut dest = BufWriter::new(File::create(model_path).unwrap());
+        let mut dest = BufWriter::new(File::create(&model_path).unwrap());
 
-        let url = self.config.model.get_model_url();
+        let url = self.get_model_url();
 
         let mut easy = Easy::new();
 
@@ -92,50 +94,67 @@ impl WhisperTranscriber {
             );
         }
 
+        Ok(model_path)
+    }
+}
+
+impl WhisperTranscriber {
+    pub fn new(config: WhisperConfig) -> Self {
+        WhisperTranscriber {
+            config,
+            context: None,
+        }
+    }
+
+    pub fn load_context(&mut self) -> Result<(), Box<dyn Error>> {
+        let model = self
+            .config
+            .model
+            .download(&Path::new(&self.config.model_dir))?;
+
+        let ctx = WhisperContext::new_with_params(
+            model.to_str().unwrap(),
+            WhisperContextParameters {
+                use_gpu: self.config.use_gpu,
+            },
+        )?;
+
+        self.context = Some(ctx);
+
         Ok(())
     }
 }
 
 impl Transcribe for WhisperTranscriber {
-    fn transcribe(&self, data: &RiffWave) -> String {
-        format!(
-            "No real transcription, but returning some data. Length={}",
-            data.data.len()
-        );
-
-        self.download_model().unwrap();
-
-        let path_to_model =
-            PathBuf::from(self.config.model_dir.clone()).join(self.config.model.get_model_name());
-
-        let ctx = WhisperContext::new_with_params(
-            path_to_model.to_str().unwrap(),
-            WhisperContextParameters { use_gpu: true },
-        )
-        .expect("Failed to create Whisper context");
-
-        let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-
-        let mut state = ctx.create_state().expect("Failed to create Whisper state");
-
-        /* if data.header.sample_rate != 16_000 {
-            panic!("Unsupported sample rate: {}hz", data.header.sample_rate);
-        } */
-
-        if data.header.num_channels != Mono {
-            panic!(
-                "Unsupported number of channels: {:?}",
-                data.header.num_channels.to_string()
-            );
+    fn transcribe(&self, data: &RiffWave) -> Result<String, Box<dyn Error>> {
+        if data.format.sample_rate != 16_000 {
+            return Err(format!("Unsupported sample rate: {}", data.format.sample_rate,).into());
         }
 
-        state
-            .full(params, &data.data_as_f32())
-            .expect("Failed to run inference");
+        if data.format.num_channels != Mono {
+            return Err(format!(
+                "Unsupported number of channels: {}",
+                data.format.num_channels,
+            )
+            .into());
+        }
 
-        let num_segments = state
-            .full_n_segments()
-            .expect("Failed to get number of segments");
+
+        let context = self.context.as_ref().expect("Context not loaded");
+
+        let mut state = context.create_state()?;
+
+        let mut params = FullParams::new(SamplingStrategy::default());
+        params.set_n_threads(self.config.n_threads);
+        params.set_translate(false);
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_timestamps(false);
+        params.set_print_special(false);
+
+        state.full(params, &data.data_as_f32())?;
+
+        let num_segments = state.full_n_segments()?;
 
         let mut result = String::from("");
 
@@ -143,25 +162,25 @@ impl Transcribe for WhisperTranscriber {
             let segment = state
                 .full_get_segment_text(i)
                 .expect("Failed to get segment text");
-            //let start_timestamp = state.full_get_segment_t0(i).expect("Failed to get segment start timestamp");
-            //let end_timestamp = state.full_get_segment_t1(i).expect("Failed to get segment end timestamp");
 
             result.push_str(&segment);
         }
 
-        result
+        Ok(result)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::{WhisperConfig, WhisperModel, WhisperTranscriber};
     use crate::transcription::Transcribe;
     use std::fs::File;
     use std::io::Read;
+    use std::path::Path;
 
     #[test]
-    fn test_transcribe() {
-        let file_path = "test_data/audio/riff_wave/OSR_us_000_0031_8k.wav";
+    fn test_transcribe_n_threads_8() {
+        let file_path = "test_data/audio/riff_wave/pcm_s16le_16k_mono.wav";
 
         let mut file = File::open(file_path).expect("File not found");
 
@@ -169,27 +188,107 @@ mod tests {
         file.read_to_end(&mut audio_data)
             .expect("Unable to read file");
 
-        let riff_wave = crate::audio::riff_wave::RiffWave::new(audio_data);
+        let riff_wave = crate::audio::riff_wave::RiffWave::new(audio_data).unwrap();
 
-        let testee = super::WhisperTranscriber {
-            config: super::WhisperConfig {
-                model: super::WhisperModel::Tiny,
-                model_dir: "./test_data/models/whisper".to_string(),
-            },
-        };
+        let mut testee = WhisperTranscriber::new(WhisperConfig {
+            model: WhisperModel::Tiny,
+            model_dir: "./test_data/models/whisper".to_string(),
+            use_gpu: true,
+            n_threads: 8,
+        });
 
-        let result = testee.transcribe(&riff_wave);
+        testee.load_context().unwrap();
 
-        assert_eq!(result, " Every word and phrase he speaks is true. He puts his last cartridge into the darn infired. We took the victims from the public school. Drive the school straight into the way. Keep the head straight in the words of constant. Save the twine when it cuts you for the night. Paper will dry out when it. Slide the kids back in open the desk. Stop the week to preserve their strength. I saw him smile, get some few friends.".to_string());
+        let result = testee.transcribe(&riff_wave).unwrap();
+
+        assert_eq!(result, " Every word and phrase he speaks is true. He put his last cartridge into the gun and fired. They took their kids from the public school. Drive the screws straight into the wood. Keep the hatch tight and the watch constant. Sever the twine with a quick snip of the knife. Paper will dry out when wet. Drive the catch back and open the desk. Help the week to preserve their strength. A solid smile gets few friends. [BLANK_AUDIO]".to_string());
     }
 
     #[test]
-    fn test_get_model_url() {
-        let testee = super::WhisperModel::Tiny;
+    fn test_transcribe_n_threads_1() {
+        let file_path = "test_data/audio/riff_wave/pcm_s16le_16k_mono.wav";
 
-        let result = testee.get_model_url();
+        let mut file = File::open(file_path).expect("File not found");
 
-        assert_eq!(result, "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin?download=true");
+        let mut audio_data = Vec::new();
+        file.read_to_end(&mut audio_data)
+            .expect("Unable to read file");
+
+        let riff_wave = crate::audio::riff_wave::RiffWave::new(audio_data).unwrap();
+
+        let mut testee = WhisperTranscriber::new(WhisperConfig {
+            model: WhisperModel::Tiny,
+            model_dir: "./test_data/models/whisper".to_string(),
+            use_gpu: true,
+            n_threads: 1,
+        });
+
+        testee.load_context().unwrap();
+
+        let result = testee.transcribe(&riff_wave).unwrap();
+
+        assert_eq!(result, " Every word and phrase he speaks is true. He put his last cartridge into the gun and fired. They took their kids from the public school. Drive the screws straight into the wood. Keep the hatch tight and the watch constant. Sever the twine with a quick snip of the knife. Paper will dry out when wet. Drive the catch back and open the desk. Help the week to preserve their strength. A solid smile gets few friends. [BLANK_AUDIO]".to_string());
+    }
+
+    #[test]
+    fn test_transcribe_use_gpu_false() {
+        let file_path = "test_data/audio/riff_wave/pcm_s16le_16k_mono.wav";
+
+        let mut file = File::open(file_path).expect("File not found");
+
+        let mut audio_data = Vec::new();
+        file.read_to_end(&mut audio_data)
+            .expect("Unable to read file");
+
+        let riff_wave = crate::audio::riff_wave::RiffWave::new(audio_data).unwrap();
+
+        let mut testee = WhisperTranscriber::new(WhisperConfig {
+            model: WhisperModel::Tiny,
+            model_dir: "./test_data/models/whisper".to_string(),
+            use_gpu: false,
+            n_threads: 1,
+        });
+
+        testee.load_context().unwrap();
+
+        let result = testee.transcribe(&riff_wave).unwrap();
+
+        assert_eq!(result, " Every word and phrase he speaks is true. He put his last cartridge into the gun and fired. They took their kids from the public school. Drive the screws straight into the wood. Keep the hatch tight and the watch constant. Sever the twine with a quick snip of the knife. Paper will dry out when wet. Drive the catch back and open the desk. Help the week to preserve their strength. A solid smile gets few friends. [BLANK_AUDIO]".to_string());
+    }
+
+    #[test]
+    fn test_get_model_url_tiny() {
+        let models = [
+            WhisperModel::Tiny,
+            WhisperModel::Base,
+            WhisperModel::Small,
+            WhisperModel::Medium,
+            WhisperModel::Large,
+        ]
+        .map(|m| m.get_model_url());
+
+        assert_eq!(
+            models[0],
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin"
+                .to_string()
+        );
+        assert_eq!(
+            models[1],
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin".to_string()
+        );
+        assert_eq!(
+            models[2],
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin".to_string()
+        );
+        assert_eq!(
+            models[3],
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin".to_string()
+        );
+        assert_eq!(
+            models[4],
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin"
+                .to_string()
+        );
     }
 
     #[test]
@@ -203,20 +302,10 @@ mod tests {
 
         let _cleanup = Cleanup;
 
-        let testee = super::WhisperTranscriber {
-            config: super::WhisperConfig {
-                model: super::WhisperModel::Tiny,
-                model_dir: "./test_data/models/whisper/test".to_string(),
-            },
-        };
+        let testee = WhisperModel::Tiny;
 
-        let result = testee.download_model();
-
-        match result {
-            Ok(_) => {}
-            Err(e) => {
-                panic!("Error downloading model: {}", e.to_string())
-            }
-        }
+        testee
+            .download(&Path::new("./test_data/models/whisper/test"))
+            .expect("Failed to download model");
     }
 }

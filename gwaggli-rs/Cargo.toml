@@ -6,5 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-whisper-rs = "0.10.0"
+whisper-rs = { version = "0.10.0", features = ["cuda"] }
 curl = "0.4.39"

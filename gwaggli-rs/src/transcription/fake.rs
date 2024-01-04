@@ -4,11 +4,11 @@ use crate::transcription::Transcribe;
 pub struct FakeTranscriber {}
 
 impl Transcribe for FakeTranscriber {
-    fn transcribe(&self, data: &RiffWave) -> String {
-        format!(
+    fn transcribe(&self, data: &RiffWave) -> Result<String, Box<dyn std::error::Error>> {
+        Ok(format!(
             "No real transcription, but returning some data. Length={}",
             data.data.len()
-        )
+        ))
     }
 }
 
@@ -20,7 +20,7 @@ mod tests {
 
     #[test]
     fn test_transcribe() {
-        let file_path = "test_data/audio/riff_wave/OSR_us_000_0031_8k.wav";
+        let file_path = "test_data/audio/riff_wave/pcm_s16le_8k_mono.wav";
 
         let mut file = File::open(file_path).expect("File not found");
 
@@ -28,11 +28,11 @@ mod tests {
         file.read_to_end(&mut audio_data)
             .expect("Unable to read file");
 
-        let riff_wave = crate::audio::riff_wave::RiffWave::new(audio_data);
+        let riff_wave = crate::audio::riff_wave::RiffWave::new(audio_data).unwrap();
 
         let testee = super::FakeTranscriber {};
 
-        let result = testee.transcribe(&riff_wave);
+        let result = testee.transcribe(&riff_wave).unwrap();
 
         assert_eq!(
             result,
