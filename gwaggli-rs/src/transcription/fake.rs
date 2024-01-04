@@ -1,5 +1,5 @@
 use crate::audio::riff_wave::RiffWave;
-use crate::transcription::transcribe::Transcribe;
+use crate::transcription::Transcribe;
 
 pub struct FakeTranscriber {}
 
@@ -13,7 +13,7 @@ impl Transcribe for FakeTranscriber {
 mod tests {
     use std::fs::File;
     use std::io::Read;
-    use crate::transcription::transcribe::Transcribe;
+    use crate::transcription::Transcribe;
 
     #[test]
     fn test_transcribe() {
