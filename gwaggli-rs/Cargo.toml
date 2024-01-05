@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 whisper-rs = { version = "0.10.0", features = ["cuda"] }
 curl = "0.4.39"
+dirs = "5.0.1"

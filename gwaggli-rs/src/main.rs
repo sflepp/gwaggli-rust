@@ -6,6 +6,7 @@ use whisper::{WhisperConfig, WhisperModel, WhisperTranscriber};
 
 mod audio;
 mod transcription;
+mod environment;
 
 fn main() {
     let file_path = "test_data/audio/riff_wave/pcm_s16le_16k_mono.wav";
@@ -20,9 +21,6 @@ fn main() {
 
     let mut testee = WhisperTranscriber::new(WhisperConfig {
         model: WhisperModel::Tiny,
-        model_dir: "./test_data/models/whisper".to_string(),
-        use_gpu: true,
-        n_threads: 8,
     });
 
     testee.load_context().unwrap();

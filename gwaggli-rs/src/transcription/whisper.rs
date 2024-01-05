@@ -8,7 +8,8 @@ use std::error::Error;
 use std::fs;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
+use dirs::{cache_dir};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 pub struct WhisperTranscriber {
@@ -18,9 +19,6 @@ pub struct WhisperTranscriber {
 
 pub struct WhisperConfig {
     pub model: WhisperModel,
-    pub model_dir: String,
-    pub use_gpu: bool,
-    pub n_threads: i32,
 }
 
 #[allow(dead_code)]
@@ -49,11 +47,13 @@ impl WhisperModel {
         )
     }
 
-    pub fn download(&self, to_directory: &Path) -> Result<PathBuf, Box<dyn Error>> {
-        let model_path = to_directory.join(self.get_model_name());
+    pub fn download(&self) -> Result<PathBuf, Box<dyn Error>> {
+        let cache_dir = cache_dir().expect("Unable to get cache dir");
+        let model_dir = cache_dir.join("gwaggli-rs/models/whisper");
+        let model_path = model_dir.join(self.get_model_name());
 
-        if !fs::metadata(&to_directory).is_ok() {
-            fs::create_dir_all(&to_directory)?;
+        if !fs::metadata(&model_dir).is_ok() {
+            fs::create_dir_all(&model_dir)?;
         }
 
         if fs::metadata(&model_path).is_ok() {
@@ -110,13 +110,11 @@ impl WhisperTranscriber {
         let model = self
             .config
             .model
-            .download(&Path::new(&self.config.model_dir))?;
+            .download()?;
 
         let ctx = WhisperContext::new_with_params(
             model.to_str().unwrap(),
-            WhisperContextParameters {
-                use_gpu: self.config.use_gpu,
-            },
+            WhisperContextParameters::default(),
         )?;
 
         self.context = Some(ctx);
@@ -145,7 +143,7 @@ impl Transcribe for WhisperTranscriber {
         let mut state = context.create_state()?;
 
         let mut params = FullParams::new(SamplingStrategy::default());
-        params.set_n_threads(self.config.n_threads);
+        params.set_n_threads(2);
         params.set_translate(false);
         params.set_print_progress(false);
         params.set_print_realtime(false);
@@ -190,10 +188,7 @@ mod tests {
         let riff_wave = crate::audio::riff_wave::RiffWave::new(audio_data).unwrap();
 
         let mut testee = WhisperTranscriber::new(WhisperConfig {
-            model: WhisperModel::Tiny,
-            model_dir: "./test_data/models/whisper".to_string(),
-            use_gpu: true,
-            n_threads: 1,
+            model: WhisperModel::Tiny
         });
 
         testee.load_context().unwrap();
@@ -236,23 +231,5 @@ mod tests {
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin"
                 .to_string()
         );
-    }
-
-    #[test]
-    fn test_download_model() {
-        struct Cleanup;
-        impl Drop for Cleanup {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_dir_all("./test_data/models/whisper/test");
-            }
-        }
-
-        let _cleanup = Cleanup;
-
-        let testee = WhisperModel::Tiny;
-
-        testee
-            .download(&Path::new("./test_data/models/whisper/test"))
-            .expect("Failed to download model");
     }
 }
