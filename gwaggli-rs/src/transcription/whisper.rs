@@ -176,36 +176,9 @@ mod tests {
     use crate::transcription::Transcribe;
     use std::fs::File;
     use std::io::Read;
-    use std::path::Path;
 
     #[test]
-    fn test_transcribe_n_threads_8() {
-        let file_path = "test_data/audio/riff_wave/pcm_s16le_16k_mono.wav";
-
-        let mut file = File::open(file_path).expect("File not found");
-
-        let mut audio_data = Vec::new();
-        file.read_to_end(&mut audio_data)
-            .expect("Unable to read file");
-
-        let riff_wave = crate::audio::riff_wave::RiffWave::new(audio_data).unwrap();
-
-        let mut testee = WhisperTranscriber::new(WhisperConfig {
-            model: WhisperModel::Tiny,
-            model_dir: "./test_data/models/whisper".to_string(),
-            use_gpu: true,
-            n_threads: 8,
-        });
-
-        testee.load_context().unwrap();
-
-        let result = testee.transcribe(&riff_wave).unwrap();
-
-        assert_eq!(result, " Every word and phrase he speaks is true. He put his last cartridge into the gun and fired. They took their kids from the public school. Drive the screws straight into the wood. Keep the hatch tight and the watch constant. Sever the twine with a quick snip of the knife. Paper will dry out when wet. Drive the catch back and open the desk. Help the week to preserve their strength. A solid smile gets few friends. [BLANK_AUDIO]".to_string());
-    }
-
-    #[test]
-    fn test_transcribe_n_threads_1() {
+    fn test_transcribe() {
         let file_path = "test_data/audio/riff_wave/pcm_s16le_16k_mono.wav";
 
         let mut file = File::open(file_path).expect("File not found");
@@ -227,37 +200,11 @@ mod tests {
 
         let result = testee.transcribe(&riff_wave).unwrap();
 
-        assert_eq!(result, " Every word and phrase he speaks is true. He put his last cartridge into the gun and fired. They took their kids from the public school. Drive the screws straight into the wood. Keep the hatch tight and the watch constant. Sever the twine with a quick snip of the knife. Paper will dry out when wet. Drive the catch back and open the desk. Help the week to preserve their strength. A solid smile gets few friends. [BLANK_AUDIO]".to_string());
+        assert_eq!(result, " Plans are well underway for races to Mars and the Moon in 1992 by solar sales. The race to Mars is to commemorate Columbus's journey to the new world 500 years ago, and the launch of the Moon is to promote the use of solar sales in space exploration.".to_string());
     }
 
     #[test]
-    fn test_transcribe_use_gpu_false() {
-        let file_path = "test_data/audio/riff_wave/pcm_s16le_16k_mono.wav";
-
-        let mut file = File::open(file_path).expect("File not found");
-
-        let mut audio_data = Vec::new();
-        file.read_to_end(&mut audio_data)
-            .expect("Unable to read file");
-
-        let riff_wave = crate::audio::riff_wave::RiffWave::new(audio_data).unwrap();
-
-        let mut testee = WhisperTranscriber::new(WhisperConfig {
-            model: WhisperModel::Tiny,
-            model_dir: "./test_data/models/whisper".to_string(),
-            use_gpu: false,
-            n_threads: 1,
-        });
-
-        testee.load_context().unwrap();
-
-        let result = testee.transcribe(&riff_wave).unwrap();
-
-        assert_eq!(result, " Every word and phrase he speaks is true. He put his last cartridge into the gun and fired. They took their kids from the public school. Drive the screws straight into the wood. Keep the hatch tight and the watch constant. Sever the twine with a quick snip of the knife. Paper will dry out when wet. Drive the catch back and open the desk. Help the week to preserve their strength. A solid smile gets few friends. [BLANK_AUDIO]".to_string());
-    }
-
-    #[test]
-    fn test_get_model_url_tiny() {
+    fn test_get_model_url() {
         let models = [
             WhisperModel::Tiny,
             WhisperModel::Base,

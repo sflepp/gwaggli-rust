@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(testee.format.byte_rate, 16000);
         assert_eq!(testee.format.block_align, 2);
         assert_eq!(testee.format.bits_per_sample, 16);
-        assert_eq!(testee.data.len(), 674066);
+        assert_eq!(testee.data.len(), 264014);
     }
 
     #[test]
@@ -227,7 +227,7 @@ mod tests {
         assert_eq!(testee.format.byte_rate, 32000);
         assert_eq!(testee.format.block_align, 2);
         assert_eq!(testee.format.bits_per_sample, 16);
-        assert_eq!(testee.data.len(), 1348132);
+        assert_eq!(testee.data.len(), 528028);
     }
 
     fn read_audio_file(file_path: &str) -> Vec<u8> {
@@ -246,8 +246,8 @@ mod tests {
         let testee = RiffWave::new(data).unwrap();
         let result = super::from_i16_vec_to_f32_vec(&testee.data);
 
-        assert_eq!(result[0], 0.0012817383);
-        assert_eq!(result[1], 0.0013122559);
-        assert_eq!(result[1000], -6.1035156e-5);
+        assert_eq!(result[0], 0.0);
+        assert_eq!(result[1], 6.1035156e-5);
+        assert_eq!(result[1000], 0.010620117);
     }
 }
