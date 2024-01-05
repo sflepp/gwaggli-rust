@@ -1,16 +1,15 @@
-extern crate curl;
-
 use crate::audio::riff_wave::Channels::Mono;
 use crate::audio::riff_wave::RiffWave;
 use crate::transcription::Transcribe;
-use curl::easy::Easy;
 use std::error::Error;
+use std::fmt::Display;
 use std::fs;
-use std::fs::File;
-use std::io::{BufWriter, Write};
 use std::path::{PathBuf};
-use dirs::{cache_dir};
+use clap::ValueEnum;
+use url::Url;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+use crate::environment::fs::models_dir;
+use crate::environment::http::download;
 
 pub struct WhisperTranscriber {
     pub config: WhisperConfig,
@@ -22,6 +21,7 @@ pub struct WhisperConfig {
 }
 
 #[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq, ValueEnum)]
 pub enum WhisperModel {
     Tiny,
     Base,
@@ -30,69 +30,37 @@ pub enum WhisperModel {
     Large,
 }
 
-impl WhisperModel {
-    pub fn get_model_name(&self) -> &str {
-        match self {
+impl Display for WhisperModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
             WhisperModel::Tiny => "ggml-tiny.en.bin",
             WhisperModel::Base => "ggml-base.bin",
             WhisperModel::Small => "ggml-small.bin",
             WhisperModel::Medium => "ggml-medium.bin",
             WhisperModel::Large => "ggml-large-v3.bin",
-        }
+        })
     }
-    pub fn get_model_url(&self) -> String {
-        format!(
-            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}",
-            self.get_model_name()
-        )
+}
+
+impl WhisperModel {
+    pub fn get_model_url(&self) -> Url {
+        Url::parse(
+            &*format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}", self)
+        ).expect("Failed to parse URL")
     }
 
-    pub fn download(&self) -> Result<PathBuf, Box<dyn Error>> {
-        let cache_dir = cache_dir().expect("Unable to get cache dir");
-        let model_dir = cache_dir.join("gwaggli-rs/models/whisper");
-        let model_path = model_dir.join(self.get_model_name());
-
-        if !fs::metadata(&model_dir).is_ok() {
-            fs::create_dir_all(&model_dir)?;
-        }
+    pub async fn download_if_not_present(&self) -> Result<PathBuf, Box<dyn Error>> {
+        let model_dir = models_dir().join("whisper");
+        let model_path = model_dir.join(self.to_string());
 
         if fs::metadata(&model_path).is_ok() {
-            println!(
-                "Model {} already exists, skipping download.",
-                self.get_model_name()
-            );
             return Ok(model_path);
         }
 
-        println!(
-            "Downloading model {} from {}",
-            self.get_model_name(),
-            self.get_model_url()
-        );
-
-        let mut dest = BufWriter::new(File::create(&model_path).unwrap());
-
-        let url = self.get_model_url();
-
-        let mut easy = Easy::new();
-
-        easy.url(&url).unwrap();
-        easy.follow_location(true).unwrap();
-
-        easy.write_function(move |data| {
-            dest.write_all(data).unwrap();
-            Ok(data.len())
-        })?;
-
-        easy.perform().unwrap();
-
-        let response_code = easy.response_code()?;
-
-        if response_code >= 400 {
-            return Err(
-                format!("Error downloading model. Response code: {}", response_code).into(),
-            );
-        }
+        let model_path = download(
+            self.get_model_url(),
+            model_path.clone(),
+        ).await?;
 
         Ok(model_path)
     }
@@ -106,11 +74,8 @@ impl WhisperTranscriber {
         }
     }
 
-    pub fn load_context(&mut self) -> Result<(), Box<dyn Error>> {
-        let model = self
-            .config
-            .model
-            .download()?;
+    pub async fn load_context(&mut self) -> Result<&Self, Box<dyn Error>> {
+        let model = self.config.model.download_if_not_present().await?;
 
         let ctx = WhisperContext::new_with_params(
             model.to_str().unwrap(),
@@ -119,22 +84,21 @@ impl WhisperTranscriber {
 
         self.context = Some(ctx);
 
-        Ok(())
+        Ok(self)
     }
 }
 
 impl Transcribe for WhisperTranscriber {
     fn transcribe(&self, data: &RiffWave) -> Result<String, Box<dyn Error>> {
         if data.format.sample_rate != 16_000 {
-            return Err(format!("Unsupported sample rate: {}", data.format.sample_rate,).into());
+            return Err(format!("Unsupported sample rate: {}", data.format.sample_rate, ).into());
         }
 
         if data.format.num_channels != Mono {
             return Err(format!(
                 "Unsupported number of channels: {}",
                 data.format.num_channels,
-            )
-            .into());
+            ).into());
         }
 
 
@@ -175,8 +139,8 @@ mod tests {
     use std::fs::File;
     use std::io::Read;
 
-    #[test]
-    fn test_transcribe() {
+    #[tokio::test]
+    async fn test_transcribe() {
         let file_path = "test_data/audio/riff_wave/pcm_s16le_16k_mono.wav";
 
         let mut file = File::open(file_path).expect("File not found");
@@ -191,7 +155,7 @@ mod tests {
             model: WhisperModel::Tiny
         });
 
-        testee.load_context().unwrap();
+        testee.load_context().await.unwrap();
 
         let result = testee.transcribe(&riff_wave).unwrap();
 
@@ -207,7 +171,7 @@ mod tests {
             WhisperModel::Medium,
             WhisperModel::Large,
         ]
-        .map(|m| m.get_model_url());
+            .map(|m| m.get_model_url().to_string());
 
         assert_eq!(
             models[0],
