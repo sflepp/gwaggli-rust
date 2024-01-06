@@ -11,3 +11,12 @@ pub fn gwaggli_cache_dir() -> PathBuf {
 pub fn models_dir() -> PathBuf {
     gwaggli_cache_dir().join("models")
 }
+pub fn download_cache_dir() -> PathBuf {
+    gwaggli_cache_dir().join("download")
+}
+pub fn clear_cache() {
+    let _ = std::fs::remove_dir_all(gwaggli_cache_dir());
+}
+pub fn prepare_download_cache_dir() {
+    let _ = std::fs::create_dir_all(download_cache_dir());
+}

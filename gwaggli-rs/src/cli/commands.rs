@@ -1,4 +1,5 @@
 use crate::audio::riff_wave::RiffWave;
+use crate::environment::fs::clear_cache;
 use crate::transcription::whisper::{WhisperConfig, WhisperModel, WhisperTranscriber};
 use crate::transcription::Transcribe;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -20,7 +21,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Transcribes a WAVE / RIFF file
+    /// Transcribes a an audio file into text
     Transcribe {
         /// Path to the wave file
         #[arg(short, long)]
@@ -30,6 +31,8 @@ enum Commands {
         #[arg(short, long, value_enum, default_value = "medium", ignore_case = true)]
         quality: Quality,
     },
+    /// Clears local cache in the file system (f.e. downloaded models)
+    ClearCache {},
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, ValueEnum)]
@@ -60,6 +63,7 @@ pub async fn run() -> Result<String, Box<dyn Error>> {
         Some(Commands::Transcribe { input, quality }) => {
             cmd_transcribe(input.clone(), quality.clone()).await
         }
+        Some(Commands::ClearCache {}) => cmd_clear_cache(),
         None => {
             println!("No command specified");
             Ok("".to_string())
@@ -90,7 +94,10 @@ async fn cmd_transcribe(input: PathBuf, quality: Quality) -> Result<String, Box<
 
     let result = transcriber.load_context().await?.transcribe(&riff_wave)?;
 
-    println!("{}", result);
-
     Ok(result)
+}
+
+fn cmd_clear_cache() -> Result<String, Box<dyn Error>> {
+    clear_cache();
+    Ok("Cache cleared.".to_string())
 }

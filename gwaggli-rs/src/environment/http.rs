@@ -1,5 +1,7 @@
+use crate::environment::fs::{download_cache_dir, prepare_download_cache_dir};
 use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
+use rand::distributions::{Alphanumeric, DistString};
 use reqwest::get;
 use std::cmp::min;
 use std::error::Error;
@@ -22,6 +24,8 @@ pub async fn download(src: Url, dest: PathBuf) -> Result<PathBuf, Box<dyn Error>
         fs::create_dir_all(dest.parent().unwrap())?;
     }
 
+    prepare_download_cache_dir();
+
     println!("Downloading {}", src);
 
     let response = get(src.to_string()).await?;
@@ -36,7 +40,8 @@ pub async fn download(src: Url, dest: PathBuf) -> Result<PathBuf, Box<dyn Error>
                 .progress_chars("#>-"),
         );
 
-        let mut file = File::create(&dest)?;
+        let tmp_file = temp_download_file();
+        let mut file = File::create(&tmp_file)?;
         let mut downloaded: u64 = 0;
         let mut stream = response.bytes_stream();
 
@@ -47,6 +52,8 @@ pub async fn download(src: Url, dest: PathBuf) -> Result<PathBuf, Box<dyn Error>
             downloaded = new;
             pb.set_position(new);
         }
+
+        fs::rename(tmp_file, dest.clone())?;
 
         pb.finish_with_message("Downloaded");
     } else {
@@ -59,4 +66,9 @@ pub async fn download(src: Url, dest: PathBuf) -> Result<PathBuf, Box<dyn Error>
     }
 
     Ok(dest)
+}
+
+fn temp_download_file() -> PathBuf {
+    let filename = Alphanumeric.sample_string(&mut rand::thread_rng(), 10);
+    download_cache_dir().join(filename)
 }
