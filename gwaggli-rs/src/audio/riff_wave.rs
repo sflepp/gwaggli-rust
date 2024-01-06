@@ -29,7 +29,7 @@ impl RiffWaveFormat {
     fn new(bytes: Vec<u8>) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(RiffWaveFormat {
             audio_format: match as_u16_le(bytes[0..2].try_into().unwrap()) {
-                1 => AudioFormat::PCM,
+                1 => AudioFormat::Pcm,
                 _ => panic!(
                     "Unsupported audio format: {}",
                     as_u16_le(bytes[0..2].try_into().unwrap())
@@ -53,13 +53,13 @@ impl RiffWaveFormat {
 
 #[derive(PartialEq, Debug)]
 pub enum AudioFormat {
-    PCM = 1,
+    Pcm = 1,
 }
 
 impl Display for AudioFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AudioFormat::PCM => write!(f, "PCM"),
+            AudioFormat::Pcm => write!(f, "PCM"),
         }
     }
 }
@@ -144,8 +144,8 @@ impl RiffWave {
 
     pub fn data_as_f32(&self) -> Vec<f32> {
         match self.format.audio_format {
-            AudioFormat::PCM => match self.format.bits_per_sample {
-                16 => return from_i16_vec_to_f32_vec(&self.data),
+            AudioFormat::Pcm => match self.format.bits_per_sample {
+                16 => from_i16_vec_to_f32_vec(&self.data),
                 _ => panic!(
                     "Unsupported bits per sample: {}",
                     self.format.bits_per_sample
@@ -156,14 +156,14 @@ impl RiffWave {
 }
 
 fn as_u32_le(array: &[u8; 4]) -> u32 {
-    ((array[0] as u32) << 0)
+    (array[0] as u32)
         + ((array[1] as u32) << 8)
         + ((array[2] as u32) << 16)
         + ((array[3] as u32) << 24)
 }
 
 fn as_u16_le(array: &[u8; 2]) -> u16 {
-    ((array[0] as u16) << 0) + ((array[1] as u16) << 8)
+    (array[0] as u16) + ((array[1] as u16) << 8)
 }
 
 fn from_i16_vec_to_f32_vec(array: &[u8]) -> Vec<f32> {
@@ -193,7 +193,7 @@ mod tests {
 
         let riff_wave = RiffWave::new(data.to_vec()).unwrap();
 
-        assert_eq!(riff_wave.format.audio_format, AudioFormat::PCM);
+        assert_eq!(riff_wave.format.audio_format, AudioFormat::Pcm);
         assert_eq!(riff_wave.format.num_channels, Channels::Mono);
         assert_eq!(riff_wave.format.sample_rate, 16000);
         assert_eq!(riff_wave.format.byte_rate, 32000);
@@ -207,7 +207,7 @@ mod tests {
         let data = read_audio_file("test_data/audio/riff_wave/pcm_s16le_8k_mono.wav");
         let testee = RiffWave::new(data).unwrap();
 
-        assert_eq!(testee.format.audio_format, AudioFormat::PCM);
+        assert_eq!(testee.format.audio_format, AudioFormat::Pcm);
         assert_eq!(testee.format.num_channels, Channels::Mono);
         assert_eq!(testee.format.sample_rate, 8000);
         assert_eq!(testee.format.byte_rate, 16000);
@@ -221,7 +221,7 @@ mod tests {
         let data = read_audio_file("test_data/audio/riff_wave/pcm_s16le_16k_mono.wav");
         let testee = RiffWave::new(data).unwrap();
 
-        assert_eq!(testee.format.audio_format, AudioFormat::PCM);
+        assert_eq!(testee.format.audio_format, AudioFormat::Pcm);
         assert_eq!(testee.format.num_channels, Channels::Mono);
         assert_eq!(testee.format.sample_rate, 16000);
         assert_eq!(testee.format.byte_rate, 32000);

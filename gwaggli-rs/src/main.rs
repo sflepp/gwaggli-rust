@@ -1,4 +1,4 @@
-use cli::cli::run;
+use cli::commands::run;
 
 mod audio;
 mod cli;

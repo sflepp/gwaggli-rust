@@ -18,8 +18,8 @@ pub async fn download(src: Url, dest: PathBuf) -> Result<PathBuf, Box<dyn Error>
         .into());
     }
 
-    if fs::metadata(&dest.parent().unwrap()).is_err() {
-        fs::create_dir_all(&dest.parent().unwrap())?;
+    if fs::metadata(dest.parent().unwrap()).is_err() {
+        fs::create_dir_all(dest.parent().unwrap())?;
     }
 
     println!("Downloading {}", src);

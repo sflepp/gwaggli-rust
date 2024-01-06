@@ -48,7 +48,7 @@ impl Display for WhisperModel {
 
 impl WhisperModel {
     pub fn get_model_url(&self) -> Url {
-        Url::parse(&*format!(
+        Url::parse(&format!(
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}",
             self
         ))
