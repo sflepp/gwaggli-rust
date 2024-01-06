@@ -4,10 +4,12 @@ use crate::environment::fs::models_dir;
 use crate::environment::http::download;
 use crate::transcription::Transcribe;
 use clap::ValueEnum;
+use colored::Colorize;
 use std::error::Error;
 use std::fmt::Display;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Instant;
 use url::Url;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
@@ -78,6 +80,8 @@ impl WhisperTranscriber {
     }
 
     pub async fn load_context(&mut self) -> Result<&Self, Box<dyn Error>> {
+        println!("{} {}", "Loading context".green().bold(), self.config.model);
+
         let model = self.config.model.download_if_not_present().await?;
 
         let ctx = WhisperContext::new_with_params(
@@ -93,6 +97,8 @@ impl WhisperTranscriber {
 
 impl Transcribe for WhisperTranscriber {
     fn transcribe(&self, data: &RiffWave) -> Result<String, Box<dyn Error>> {
+        let start = Instant::now();
+
         if data.format.sample_rate != 16_000 {
             return Err(format!("Unsupported sample rate: {}", data.format.sample_rate,).into());
         }
@@ -107,6 +113,7 @@ impl Transcribe for WhisperTranscriber {
 
         let context = self.context.as_ref().expect("Context not loaded");
 
+        println!("{} state", "Creating".green().bold());
         let mut state = context.create_state()?;
 
         let mut params = FullParams::new(SamplingStrategy::default());
@@ -117,6 +124,7 @@ impl Transcribe for WhisperTranscriber {
         params.set_print_timestamps(false);
         params.set_print_special(false);
 
+        println!("{} inference on {}", "Running".green().bold(), data);
         state.full(params, &data.data_as_f32())?;
 
         let num_segments = state.full_n_segments()?;
@@ -130,6 +138,14 @@ impl Transcribe for WhisperTranscriber {
 
             result.push_str(&segment);
         }
+
+        let duration = start.elapsed();
+
+        println!(
+            "{} transcribe audio in {}ms",
+            "Finished".green().bold(),
+            duration.as_millis()
+        );
 
         Ok(result)
     }

@@ -155,6 +155,21 @@ impl RiffWave {
     }
 }
 
+impl Display for RiffWave {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}kB {} {} {}kH {}B/s {}bit WAFF/RIFF audio",
+            self.data.len() / 1024,
+            self.format.audio_format,
+            self.format.num_channels,
+            self.format.sample_rate / 1000,
+            self.format.byte_rate,
+            self.format.bits_per_sample,
+        )
+    }
+}
+
 fn as_u32_le(array: &[u8; 4]) -> u32 {
     (array[0] as u32)
         + ((array[1] as u32) << 8)
