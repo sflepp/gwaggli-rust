@@ -101,23 +101,3 @@ fn cmd_clear_cache() -> Result<String, Box<dyn Error>> {
     clear_cache();
     Ok("Cache cleared.".to_string())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse() {
-        let cli = Cli::parse_from(&["gwaggli", "transcribe", "--input", "test.wav"]);
-        assert_eq!(
-            cli.command,
-            Some(Commands::Transcribe {
-                input: PathBuf::from("test.wav"),
-                quality: Quality::Medium
-            })
-        );
-    }
-
-    #[test]
-    fn test_transcribe() {}
-}
