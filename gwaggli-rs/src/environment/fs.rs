@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use dirs::{cache_dir, home_dir};
+use std::path::PathBuf;
 
 #[allow(dead_code)]
 pub fn gwaggli_home_dir() -> PathBuf {

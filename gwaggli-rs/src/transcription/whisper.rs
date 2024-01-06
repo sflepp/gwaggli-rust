@@ -1,15 +1,15 @@
 use crate::audio::riff_wave::Channels::Mono;
 use crate::audio::riff_wave::RiffWave;
+use crate::environment::fs::models_dir;
+use crate::environment::http::download;
 use crate::transcription::Transcribe;
+use clap::ValueEnum;
 use std::error::Error;
 use std::fmt::Display;
 use std::fs;
-use std::path::{PathBuf};
-use clap::ValueEnum;
+use std::path::PathBuf;
 use url::Url;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
-use crate::environment::fs::models_dir;
-use crate::environment::http::download;
 
 pub struct WhisperTranscriber {
     pub config: WhisperConfig,
@@ -32,21 +32,27 @@ pub enum WhisperModel {
 
 impl Display for WhisperModel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            WhisperModel::Tiny => "ggml-tiny.en.bin",
-            WhisperModel::Base => "ggml-base.bin",
-            WhisperModel::Small => "ggml-small.bin",
-            WhisperModel::Medium => "ggml-medium.bin",
-            WhisperModel::Large => "ggml-large-v3.bin",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                WhisperModel::Tiny => "ggml-tiny.en.bin",
+                WhisperModel::Base => "ggml-base.bin",
+                WhisperModel::Small => "ggml-small.bin",
+                WhisperModel::Medium => "ggml-medium.bin",
+                WhisperModel::Large => "ggml-large-v3.bin",
+            }
+        )
     }
 }
 
 impl WhisperModel {
     pub fn get_model_url(&self) -> Url {
-        Url::parse(
-            &*format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}", self)
-        ).expect("Failed to parse URL")
+        Url::parse(&*format!(
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{}",
+            self
+        ))
+        .expect("Failed to parse URL")
     }
 
     pub async fn download_if_not_present(&self) -> Result<PathBuf, Box<dyn Error>> {
@@ -57,10 +63,7 @@ impl WhisperModel {
             return Ok(model_path);
         }
 
-        let model_path = download(
-            self.get_model_url(),
-            model_path.clone(),
-        ).await?;
+        let model_path = download(self.get_model_url(), model_path.clone()).await?;
 
         Ok(model_path)
     }
@@ -91,16 +94,16 @@ impl WhisperTranscriber {
 impl Transcribe for WhisperTranscriber {
     fn transcribe(&self, data: &RiffWave) -> Result<String, Box<dyn Error>> {
         if data.format.sample_rate != 16_000 {
-            return Err(format!("Unsupported sample rate: {}", data.format.sample_rate, ).into());
+            return Err(format!("Unsupported sample rate: {}", data.format.sample_rate,).into());
         }
 
         if data.format.num_channels != Mono {
             return Err(format!(
                 "Unsupported number of channels: {}",
                 data.format.num_channels,
-            ).into());
+            )
+            .into());
         }
-
 
         let context = self.context.as_ref().expect("Context not loaded");
 
@@ -152,7 +155,7 @@ mod tests {
         let riff_wave = crate::audio::riff_wave::RiffWave::new(audio_data).unwrap();
 
         let mut testee = WhisperTranscriber::new(WhisperConfig {
-            model: WhisperModel::Tiny
+            model: WhisperModel::Tiny,
         });
 
         testee.load_context().await.unwrap();
@@ -171,7 +174,7 @@ mod tests {
             WhisperModel::Medium,
             WhisperModel::Large,
         ]
-            .map(|m| m.get_model_url().to_string());
+        .map(|m| m.get_model_url().to_string());
 
         assert_eq!(
             models[0],

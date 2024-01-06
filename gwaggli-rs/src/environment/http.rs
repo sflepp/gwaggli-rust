@@ -1,17 +1,21 @@
-use std::error::Error;
-use std::{fs};
-use std::cmp::min;
-use std::fs::File;
-use std::io::{Write};
-use std::path::PathBuf;
+use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::get;
+use std::cmp::min;
+use std::error::Error;
+use std::fs;
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
 use url::Url;
-use futures_util::StreamExt;
 
 pub async fn download(src: Url, dest: PathBuf) -> Result<PathBuf, Box<dyn Error>> {
     if fs::metadata(&dest).is_ok() {
-        return Err(format!("File {} already exists, unable to download.", dest.display()).into());
+        return Err(format!(
+            "File {} already exists, unable to download.",
+            dest.display()
+        )
+        .into());
     }
 
     if fs::metadata(&dest.parent().unwrap()).is_err() {
@@ -46,7 +50,12 @@ pub async fn download(src: Url, dest: PathBuf) -> Result<PathBuf, Box<dyn Error>
 
         pb.finish_with_message("Downloaded");
     } else {
-        return Err(format!("HTTP Status {} while downloading {}", response.status(), &src).into());
+        return Err(format!(
+            "HTTP Status {} while downloading {}",
+            response.status(),
+            &src
+        )
+        .into());
     }
 
     Ok(dest)

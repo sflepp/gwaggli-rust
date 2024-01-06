@@ -1,12 +1,12 @@
+use crate::audio::riff_wave::RiffWave;
+use crate::transcription::whisper::{WhisperConfig, WhisperModel, WhisperTranscriber};
+use crate::transcription::Transcribe;
+use clap::{Parser, Subcommand, ValueEnum};
 use std::error::Error;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::PathBuf;
-use clap::{Parser, Subcommand, ValueEnum};
-use crate::audio::riff_wave::RiffWave;
-use crate::transcription::Transcribe;
-use crate::transcription::whisper::{WhisperConfig, WhisperModel, WhisperTranscriber};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -49,7 +49,6 @@ impl Display for Quality {
     }
 }
 
-
 pub async fn run() -> Result<String, Box<dyn Error>> {
     let cli = Cli::parse();
 
@@ -68,7 +67,6 @@ pub async fn run() -> Result<String, Box<dyn Error>> {
     }
 }
 
-
 async fn cmd_transcribe(input: PathBuf, quality: Quality) -> Result<String, Box<dyn Error>> {
     println!("Transcribing file with {} quality: {:?}", quality, input);
 
@@ -82,19 +80,15 @@ async fn cmd_transcribe(input: PathBuf, quality: Quality) -> Result<String, Box<
 
     let riff_wave = RiffWave::new(buffer).unwrap();
 
-    let mut transcriber = WhisperTranscriber::new(
-        WhisperConfig {
-            model: match quality {
-                Quality::Low => WhisperModel::Tiny,
-                Quality::Medium => WhisperModel::Medium,
-                Quality::High => WhisperModel::Large,
-            }
-        }
-    );
+    let mut transcriber = WhisperTranscriber::new(WhisperConfig {
+        model: match quality {
+            Quality::Low => WhisperModel::Tiny,
+            Quality::Medium => WhisperModel::Medium,
+            Quality::High => WhisperModel::Large,
+        },
+    });
 
-    let result = transcriber
-        .load_context().await?
-        .transcribe(&riff_wave)?;
+    let result = transcriber.load_context().await?.transcribe(&riff_wave)?;
 
     println!("{}", result);
 

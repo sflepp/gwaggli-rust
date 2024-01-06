@@ -1,9 +1,9 @@
 use cli::cli::run;
 
 mod audio;
-mod transcription;
 mod cli;
 mod environment;
+mod transcription;
 
 #[tokio::main]
 async fn main() {
