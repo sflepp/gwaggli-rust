@@ -4,6 +4,7 @@ mod audio;
 mod cli;
 mod environment;
 mod transcription;
+mod utils;
 
 #[tokio::main]
 async fn main() {

@@ -1,5 +1,7 @@
+use crate::audio::microphone::MicrophoneReader;
 use crate::audio::riff_wave::RiffWave;
 use crate::environment::fs::clear_cache;
+use crate::transcription::real_time::transcribe_streamed;
 use crate::transcription::whisper::{WhisperConfig, WhisperModel, WhisperTranscriber};
 use crate::transcription::Transcribe;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -27,6 +29,11 @@ enum Commands {
         #[arg(short, long)]
         input: PathBuf,
 
+        /// Quality of the transcription; Higher takes more time to process
+        #[arg(short, long, value_enum, default_value = "medium", ignore_case = true)]
+        quality: Quality,
+    },
+    Transcribe_Realtime {
         /// Quality of the transcription; Higher takes more time to process
         #[arg(short, long, value_enum, default_value = "medium", ignore_case = true)]
         quality: Quality,
@@ -63,6 +70,9 @@ pub async fn run() -> Result<String, Box<dyn Error>> {
         Some(Commands::Transcribe { input, quality }) => {
             cmd_transcribe(input.clone(), quality.clone()).await
         }
+        Some(Commands::Transcribe_Realtime { quality }) => {
+            cmd_transcribe_realtime(quality.clone()).await
+        }
         Some(Commands::ClearCache {}) => cmd_clear_cache(),
         None => {
             println!("No command specified");
@@ -95,6 +105,16 @@ async fn cmd_transcribe(input: PathBuf, quality: Quality) -> Result<String, Box<
     let result = transcriber.load_context().await?.transcribe(&riff_wave)?;
 
     Ok(result)
+}
+
+async fn cmd_transcribe_realtime(quailty: Quality) -> Result<String, Box<dyn Error>> {
+    println!("Transcribing realtime with {} quality", quailty);
+
+    let microphone = MicrophoneReader::new().unwrap();
+
+    transcribe_streamed(microphone).await;
+
+    Ok("".to_string())
 }
 
 fn cmd_clear_cache() -> Result<String, Box<dyn Error>> {

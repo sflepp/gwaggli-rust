@@ -194,6 +194,16 @@ fn from_i16_vec_to_f32_vec(array: &[u8]) -> Vec<f32> {
     result
 }
 
+pub fn from_i16_vec_to_u8_vec(array: &[i16]) -> Vec<u8> {
+    let mut result = Vec::with_capacity(array.len() * 2);
+
+    for sample in array {
+        result.extend_from_slice(&sample.to_le_bytes());
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use crate::audio::riff_wave::{AudioFormat, Channels, RiffWave};

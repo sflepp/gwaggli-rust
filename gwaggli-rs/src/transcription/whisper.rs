@@ -2,7 +2,7 @@ use crate::audio::riff_wave::Channels::Mono;
 use crate::audio::riff_wave::RiffWave;
 use crate::environment::fs::models_dir;
 use crate::environment::http::download;
-use crate::transcription::Transcribe;
+use crate::transcription::{Transcribe, TranscribeRaw};
 use clap::ValueEnum;
 use colored::Colorize;
 use std::error::Error;
@@ -126,6 +126,48 @@ impl Transcribe for WhisperTranscriber {
 
         println!("{} inference on {}", "Running".green().bold(), data);
         state.full(params, &data.data_as_f32())?;
+
+        let num_segments = state.full_n_segments()?;
+
+        let mut result = String::from("");
+
+        for i in 0..num_segments {
+            let segment = state
+                .full_get_segment_text(i)
+                .expect("Failed to get segment text");
+
+            result.push_str(&segment);
+        }
+
+        let duration = start.elapsed();
+
+        println!(
+            "{} transcribe audio in {}ms",
+            "Finished".green().bold(),
+            duration.as_millis()
+        );
+
+        Ok(result)
+    }
+}
+
+impl TranscribeRaw for WhisperTranscriber {
+    fn transcribe_raw(&self, data: Vec<f32>) -> Result<String, Box<dyn Error>> {
+        let start = Instant::now();
+
+        let context = self.context.as_ref().expect("Context not loaded");
+
+        let mut state = context.create_state()?;
+
+        let mut params = FullParams::new(SamplingStrategy::default());
+        params.set_n_threads(2);
+        params.set_translate(false);
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_timestamps(false);
+        params.set_print_special(false);
+
+        state.full(params, &data)?;
 
         let num_segments = state.full_n_segments()?;
 
